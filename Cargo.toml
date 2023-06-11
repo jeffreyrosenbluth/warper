@@ -1,0 +1,21 @@
+[package]
+name = "warper"
+version = "0.1.0"
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+iced = { version = "0.9.0", features = ["image", "tokio"] }
+wassily = { git = "https://github.com/jeffreyrosenbluth/wassily" }
+rand = { version = "0.8.5", features = ["small_rng"] }
+num-traits = "0.2.15"
+# iced_aw = { git = "https://github.com/jeffreyrosenbluth/iced_aw", default-features = false, features = [
+#     "color_picker",
+# ] }
+directories = "5.0.1"
+env_logger = "0.10.0"
+iced_native = "0.10.3"
+iced_lazy = "0.6.1"
+num-complex = "0.4.3"
+rayon = "1.7.0"
