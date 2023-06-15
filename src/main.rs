@@ -1,15 +1,17 @@
 use directories::UserDirs;
 use iced::{
-    widget::{button, image, row, text, Column, Container},
+    widget::{
+        button, column, image, radio, row, scrollable, text, text_input, Column, Container, Rule,
+    },
     Application, Command, Element, Settings, Theme,
 };
-use num_complex::Complex32;
+use iced_native::widget::scrollable::Properties;
 use rayon::prelude::*;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use wassily::prelude::{
-    imageops, noise2d, noise2d_01, open, Colorful, Coord, ImageBuffer, NoiseOpts, Rgba, Warp,
-    WarpNode,
+    imageops, noise2d, noise2d_01, open, pt, Colorful, Coord, DynamicImage, ImageBuffer, NoiseOpts,
+    Rgba, Warp, WarpNode,
 };
 
 mod gui;
@@ -18,11 +20,30 @@ mod noise;
 use crate::gui::numeric_input::NumericInput;
 use crate::noise::*;
 
+static DEFAULT_IMAGE: &'static [u8] = include_bytes!("./default.raw");
+
 pub fn main() -> iced::Result {
     env_logger::init();
     let mut settings = Settings::default();
-    settings.window.size = (1430, 1200);
+    settings.window.size = (1430, 920);
     Warper::run(settings)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Coordinates {
+    Polar,
+    Cartesian,
+    Absolute,
+}
+
+impl From<Coordinates> for String {
+    fn from(coord: Coordinates) -> Self {
+        match coord {
+            Coordinates::Polar => "Polar".to_string(),
+            Coordinates::Cartesian => "Cartesian".to_string(),
+            Coordinates::Absolute => "Absolute".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -32,26 +53,39 @@ pub enum Message {
     HueRotation(f32),
     Export,
     ExportComplete(()),
+    PathSet(String),
+    ImgPath,
+    CoordinatesMessage(Coordinates),
+    WidthSet(String),
+    HeightSet(String),
     Null,
 }
 
 #[derive(Debug, Clone)]
 struct Controls {
+    img_path: String,
     theta_noise: NoiseControls,
     radius_noise: NoiseControls,
     hue_rotation: f32,
+    coordinates: Option<Coordinates>,
     exporting: bool,
+    export_width: String,
+    export_height: String,
 }
 
 impl Default for Controls {
     fn default() -> Self {
         Self {
+            img_path: String::from(""),
             theta_noise: NoiseControls::default(),
             radius_noise: NoiseControls {
-                factor: 750.0,
+                factor: 1000.0,
                 ..Default::default()
             },
             hue_rotation: 0.0,
+            coordinates: Some(Coordinates::Polar),
+            export_width: String::from("inches"),
+            export_height: String::from("inches"),
             exporting: false,
         }
     }
@@ -60,24 +94,29 @@ impl Default for Controls {
 #[derive(Debug, Clone)]
 struct Warper {
     controls: Controls,
+    img: DynamicImage,
     image: image::Handle,
 }
 
 impl Warper {
     pub fn new() -> Self {
         let controls = Controls::default();
-        let img_data = draw(&controls);
-        let width = 4032;
-        let height = 3024;
+        let img = DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(2000, 2000, DEFAULT_IMAGE.to_vec()).unwrap(),
+        );
+        // let img = open(Path::new(&controls.img_path)).unwrap();
+        let img_data = draw(&controls, &img);
+        let image = image::Handle::from_pixels(img.width(), img.height(), img_data);
         Self {
             controls,
-            image: image::Handle::from_pixels(width, height, img_data),
+            img,
+            image,
         }
     }
 
     pub fn draw(&mut self) {
-        let img_data = draw(&self.controls);
-        self.image = image::Handle::from_pixels(4032, 3024, img_data);
+        let img_data = draw(&self.controls, &self.img);
+        self.image = image::Handle::from_pixels(self.img.width(), self.img.height(), img_data);
     }
 }
 
@@ -112,9 +151,30 @@ impl Application for Warper {
             }
             Export => {
                 self.controls.exporting = true;
-                return Command::perform(print(self.controls.clone()), ExportComplete);
+                return Command::perform(
+                    print(self.controls.clone(), self.img.clone()),
+                    ExportComplete,
+                );
             }
             ExportComplete(_) => self.controls.exporting = false,
+            PathSet(p) => self.controls.img_path = p,
+            ImgPath => {
+                self.img = match open(Path::new(&self.controls.img_path)) {
+                    Ok(img) => img,
+                    Err(_) => DynamicImage::ImageRgba8(
+                        ImageBuffer::from_raw(2000, 2000, DEFAULT_IMAGE.to_vec()).unwrap(),
+                    ),
+                };
+                self.draw()
+            }
+            CoordinatesMessage(c) => {
+                self.controls.coordinates = Some(c);
+                self.draw()
+            }
+            WidthSet(w) => {
+                self.controls.export_width = w;
+            }
+            HeightSet(h) => self.controls.export_height = h,
             Null => {}
         }
         Command::none()
@@ -124,8 +184,56 @@ impl Application for Warper {
         use Message::*;
         let img_view = image::viewer(self.image.clone()).min_scale(0.75);
         let img_container = Container::new(img_view).padding(20);
-        let mut control_panel = Column::new();
-
+        let mut control_panel = Column::new()
+            .push(text("Image Path").width(200))
+            .spacing(15)
+            .push(
+                text_input("", &self.controls.img_path)
+                    .on_input(PathSet)
+                    .size(15)
+                    .width(200)
+                    .on_submit(ImgPath),
+            )
+            .push(Rule::horizontal(5))
+            .push(
+                column(
+                    [
+                        Coordinates::Polar,
+                        Coordinates::Cartesian,
+                        Coordinates::Absolute,
+                    ]
+                    .iter()
+                    .cloned()
+                    .map(|d| {
+                        radio(d, d, self.controls.coordinates, CoordinatesMessage)
+                            .text_size(15)
+                            .size(15)
+                    })
+                    .map(Element::from)
+                    .collect(),
+                )
+                .spacing(15),
+            )
+            .push(
+                row!(
+                    text("Width").size(15).width(90),
+                    text("Height").size(15).width(90)
+                )
+                .spacing(15),
+            )
+            .push(
+                row!(
+                    text_input("", &self.controls.export_width)
+                        .on_input(WidthSet)
+                        .size(15)
+                        .width(90),
+                    text_input("", &self.controls.export_height)
+                        .on_input(HeightSet)
+                        .size(15)
+                        .width(90)
+                )
+                .spacing(15),
+            );
         let angle = NoiseControls::new(
             self.controls.theta_noise.function,
             self.controls.theta_noise.factor,
@@ -140,33 +248,39 @@ impl Application for Warper {
             self.controls.theta_noise.sin_y_exp,
         );
         control_panel = control_panel
-            .push("Angle")
+            .push(if self.controls.coordinates == Some(Coordinates::Polar) {
+                text("Angle")
+            } else {
+                text("Warp Function")
+            })
             .push(angle.view().map(Message::Angle));
 
-        let radius = NoiseControls::new(
-            self.controls.radius_noise.function,
-            self.controls.radius_noise.factor,
-            self.controls.radius_noise.scale,
-            self.controls.radius_noise.octaves,
-            self.controls.radius_noise.persistence,
-            self.controls.radius_noise.lacunarity,
-            self.controls.radius_noise.frequency,
-            self.controls.radius_noise.sin_x_freq,
-            self.controls.radius_noise.sin_y_freq,
-            self.controls.radius_noise.sin_x_exp,
-            self.controls.radius_noise.sin_y_exp,
-        );
-        control_panel = control_panel
-            .push("Radius")
-            .push(radius.view().map(Message::Radius))
-            .push(NumericInput::new(
-                "Hue Rotation".to_string(),
-                self.controls.hue_rotation,
-                0.0..=360.0,
-                1.0,
-                0,
-                HueRotation,
-            ));
+        if self.controls.coordinates == Some(Coordinates::Polar) {
+            let radius = NoiseControls::new(
+                self.controls.radius_noise.function,
+                self.controls.radius_noise.factor,
+                self.controls.radius_noise.scale,
+                self.controls.radius_noise.octaves,
+                self.controls.radius_noise.persistence,
+                self.controls.radius_noise.lacunarity,
+                self.controls.radius_noise.frequency,
+                self.controls.radius_noise.sin_x_freq,
+                self.controls.radius_noise.sin_y_freq,
+                self.controls.radius_noise.sin_x_exp,
+                self.controls.radius_noise.sin_y_exp,
+            );
+            control_panel = control_panel
+                .push("Radius")
+                .push(radius.view().map(Message::Radius))
+        }
+        control_panel = control_panel.push(NumericInput::new(
+            "Hue Rotation".to_string(),
+            self.controls.hue_rotation,
+            0.0..=360.0,
+            1.0,
+            0,
+            HueRotation,
+        ));
         let export_button = if self.controls.exporting {
             button(text("Export").size(15))
         } else {
@@ -177,7 +291,9 @@ impl Application for Warper {
             .spacing(10)
             .padding(20)
             .width(250);
-        row!(control_panel, img_container).into()
+        let scroll_panel = scrollable(control_panel)
+            .vertical_scroll(Properties::new().width(5).margin(5).scroller_width(5));
+        row!(scroll_panel, img_container).into()
     }
 
     fn theme(&self) -> Theme {
@@ -185,8 +301,7 @@ impl Application for Warper {
     }
 }
 
-fn draw(controls: &Controls) -> Vec<u8> {
-    let img = open("./assets/greece.png").unwrap();
+fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
     let opts_theta = NoiseOpts::with_wh(img.width(), img.height())
         .factor(controls.theta_noise.factor)
         .scales(controls.theta_noise.scale);
@@ -195,20 +310,42 @@ fn draw(controls: &Controls) -> Vec<u8> {
         .factor(controls.radius_noise.factor)
         .scales(controls.radius_noise.scale);
     let nf_r = choose_noise(&controls.radius_noise);
-    let warp = Warp::new(
-        Arc::new(move |z| {
-            Complex32::new(
-                noise2d(&nf_theta, &opts_theta, z.re, z.im),
-                noise2d_01(&nf_r, &opts_r, z.re + 1.71, z.im + 4.13),
-            )
-        }),
-        WarpNode::Img(&img, img.width() as f32, img.height() as f32),
-        Coord::Polar,
-    );
-
-    let mut buffer: Vec<(u32, u32)> = Vec::with_capacity(4032 * 3024);
-    for i in 0..3024 {
-        for j in 0..4032 {
+    let warp = match controls.coordinates.unwrap() {
+        Coordinates::Polar => Warp::new(
+            Arc::new(move |z| {
+                pt(
+                    noise2d(&nf_theta, &opts_theta, z.x, z.y),
+                    noise2d_01(&nf_r, &opts_r, z.x + 1.71, z.y + 4.13),
+                )
+            }),
+            WarpNode::Img(img, img.width() as f32, img.height() as f32),
+            Coord::Polar,
+        ),
+        Coordinates::Cartesian => Warp::new(
+            Arc::new(move |z| {
+                pt(
+                    noise2d(&nf_theta, &opts_theta, z.x, z.y),
+                    noise2d(&nf_theta, &opts_theta, z.x + 1.71, z.y + 4.13),
+                )
+            }),
+            WarpNode::Img(img, img.width() as f32, img.height() as f32),
+            Coord::Cartesian,
+        ),
+        Coordinates::Absolute => Warp::new(
+            Arc::new(move |z| {
+                pt(
+                    noise2d(&nf_theta, &opts_theta, z.x, z.y),
+                    noise2d(&nf_theta, &opts_theta, z.x + 1.71, z.y + 4.13),
+                )
+            }),
+            WarpNode::Img(img, img.width() as f32, img.height() as f32),
+            Coord::Absolute,
+        ),
+    };
+    let mut buffer: Vec<(u32, u32)> =
+        Vec::with_capacity(img.width() as usize * img.height() as usize);
+    for i in 0..img.height() {
+        for j in 0..img.width() {
             buffer.push((j, i));
         }
     }
@@ -223,15 +360,23 @@ fn draw(controls: &Controls) -> Vec<u8> {
     img_data
 }
 
-async fn print(controls: Controls) {
+async fn print(controls: Controls, img: DynamicImage) {
     let mut img_buf: ImageBuffer<Rgba<u8>, Vec<u8>> =
-        ImageBuffer::from_vec(4032, 3024, draw(&controls)).unwrap();
-    img_buf = imageops::resize(
-        &img_buf,
-        (4032.0 * 2.5) as u32,
-        (3024.0 * 2.5) as u32,
-        imageops::FilterType::CatmullRom,
-    );
+        ImageBuffer::from_vec(img.width(), img.height(), draw(&controls, &img)).unwrap();
+
+    let aspect_ratio = img.width() as f32 / img.height() as f32;
+    let mut width = img.width() as u32;
+    let mut height = img.height() as u32;
+    if let Ok(w) = controls.export_width.parse::<f32>() {
+        width = (300.0 * w).round() as u32;
+        if let Ok(h) = controls.export_height.parse::<f32>() {
+            height = (300.0 * h).round() as u32;
+        } else {
+            height = (width as f32 / aspect_ratio) as u32;
+        }
+    };
+
+    img_buf = imageops::resize(&img_buf, width, height, imageops::FilterType::CatmullRom);
     let dirs = UserDirs::new().unwrap();
     let dir = dirs.download_dir().unwrap();
     let path = format!(r"{}/{}", dir.to_string_lossy(), "warp");

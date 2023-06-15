@@ -45,7 +45,7 @@ impl Default for NoiseControls {
             function: Some(NoiseFunctionName::Fbm),
             factor: 50.0,
             scale: 8.0,
-            octaves: 4,
+            octaves: 1,
             persistence: 0.5,
             lacunarity: 2.0,
             frequency: 1.0,
@@ -166,7 +166,7 @@ impl<'a> NoiseControls {
             .push(LPickList::new(
                 "Noise Function".to_string(),
                 vec![
-                    Fbm, Billow, Ridged, Value, Cylinders, Curl, Magnet, Sinusoidal, SinFbm,
+                    Fbm, Billow, Ridged, Value, Cylinders, Curl, Sinusoidal, SinFbm,
                 ],
                 self.function,
                 |x| x.map_or(Null, Function),
@@ -227,7 +227,7 @@ impl<'a> NoiseControls {
             col = col.push(NumericInput::new(
                 "Octaves".to_string(),
                 self.octaves,
-                1..=8,
+                1..=6,
                 1,
                 0,
                 Octaves,
@@ -260,7 +260,7 @@ impl<'a> NoiseControls {
                     ))
             }
         }
-        col.spacing(10).into()
+        col.spacing(7).into()
     }
 }
 
@@ -272,7 +272,6 @@ pub enum NoiseFunctionName {
     Value,
     Cylinders,
     Curl,
-    Magnet,
     Sinusoidal,
     SinFbm,
 }
@@ -289,7 +288,6 @@ impl std::fmt::Display for NoiseFunctionName {
                 NoiseFunctionName::Cylinders => "Cylinders",
                 NoiseFunctionName::Value => "Value",
                 NoiseFunctionName::Curl => "Curl",
-                NoiseFunctionName::Magnet => "Magnet",
                 NoiseFunctionName::Sinusoidal => "Sinusoidal",
                 NoiseFunctionName::SinFbm => "SinFbm",
             }
@@ -304,7 +302,6 @@ pub enum NoiseFunction {
     Value(Value),
     Cylinders(TranslatePoint<Cylinders>),
     Curl(Curl<Fbm<Perlin>>),
-    Magnet(Magnet),
     Sinusoidal(Sinusoidal),
     SinFbm(Sin<f64, Fbm<Perlin>, 2>),
 }
@@ -318,7 +315,6 @@ impl NoiseFn<f64, 2> for NoiseFunction {
             NoiseFunction::Value(n) => n.get(point),
             NoiseFunction::Cylinders(n) => n.get(point),
             NoiseFunction::Curl(n) => n.get(point),
-            NoiseFunction::Magnet(n) => n.get(point),
             NoiseFunction::Sinusoidal(n) => n.get(point),
             NoiseFunction::SinFbm(n) => n.get(point),
         }
@@ -349,11 +345,9 @@ pub fn choose_noise(controls: &NoiseControls) -> NoiseFunction {
                 .set_persistence(controls.persistence as f64),
         ),
         NoiseFunctionName::Value => NoiseFunction::Value(Value::default()),
-        NoiseFunctionName::Cylinders => NoiseFunction::Cylinders(
-            TranslatePoint::new(Cylinders::default().set_frequency(controls.octaves as f64 / 2.0))
-                .set_x_translation(4032.0 / 2.0)
-                .set_y_translation(3024.0 / 2.0),
-        ),
+        NoiseFunctionName::Cylinders => NoiseFunction::Cylinders(TranslatePoint::new(
+            Cylinders::default().set_frequency(controls.octaves as f64 / 2.0),
+        )),
         NoiseFunctionName::Curl => {
             let nf = Fbm::<Perlin>::default()
                 .set_octaves(controls.octaves as usize)
@@ -362,17 +356,11 @@ pub fn choose_noise(controls: &NoiseControls) -> NoiseFunction {
                 .set_persistence(controls.persistence as f64);
             NoiseFunction::Curl(Curl::new(nf))
         }
-        NoiseFunctionName::Magnet => NoiseFunction::Magnet(Magnet::new(vec![
-            pt(1000, 750),
-            pt(1000, 2250),
-            pt(3000, 750),
-            pt(3000, 2250),
-        ])),
         NoiseFunctionName::Sinusoidal => NoiseFunction::Sinusoidal(Sinusoidal::new(
             controls.sin_x_freq as f64,
             controls.sin_y_freq as f64,
-            controls.sin_x_exp as i32,
-            controls.sin_y_exp as i32,
+            controls.sin_x_exp,
+            controls.sin_y_exp,
         )),
         NoiseFunctionName::SinFbm => NoiseFunction::SinFbm(Sin::new(
             Fbm::<Perlin>::default()
@@ -381,34 +369,6 @@ pub fn choose_noise(controls: &NoiseControls) -> NoiseFunction {
                 .set_frequency(controls.frequency as f64)
                 .set_persistence(controls.persistence as f64),
         )),
-    }
-}
-
-pub struct Magnet {
-    sinks: Vec<Point>,
-}
-
-impl Magnet {
-    pub fn new(sinks: Vec<Point>) -> Self {
-        Self { sinks }
-    }
-}
-
-impl NoiseFn<f64, 2> for Magnet {
-    fn get(&self, point: [f64; 2]) -> f64 {
-        let mut p = Point::zero();
-        let mut min_sink = f64::MAX;
-        for s in &self.sinks {
-            let d = pt(point[0], point[1]).dist2(pt(s.x, s.y)) as f64;
-            if d < min_sink {
-                min_sink = d;
-                p = *s;
-            }
-        }
-        if min_sink == f64::MAX {
-            return 0.0;
-        }
-        (p.y as f64 - point[1]).atan2(p.x as f64 - point[0]) / std::f64::consts::PI
     }
 }
 
