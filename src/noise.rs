@@ -12,7 +12,8 @@ use wassily::prelude::*;
 pub enum NoiseMessage {
     Function(NoiseFunctionName),
     Factor(f32),
-    Scale(f32),
+    ScaleX(f32),
+    ScaleY(f32),
     Octaves(i32),
     Persistence(f32),
     Lacunarity(f32),
@@ -28,7 +29,8 @@ pub enum NoiseMessage {
 pub struct NoiseControls {
     pub function: Option<NoiseFunctionName>,
     pub factor: f32,
-    pub scale: f32,
+    pub scale_x: f32,
+    pub scale_y: f32,
     pub octaves: i32,
     pub persistence: f32,
     pub lacunarity: f32,
@@ -44,7 +46,8 @@ impl Default for NoiseControls {
         Self {
             function: Some(NoiseFunctionName::Fbm),
             factor: 50.0,
-            scale: 8.0,
+            scale_x: 8.0,
+            scale_y: 8.0,
             octaves: 1,
             persistence: 0.5,
             lacunarity: 2.0,
@@ -61,7 +64,8 @@ impl<'a> NoiseControls {
     pub fn new(
         function: Option<NoiseFunctionName>,
         factor: f32,
-        scale: f32,
+        scale_x: f32,
+        scale_y: f32,
         octaves: i32,
         persistence: f32,
         lacunarity: f32,
@@ -74,7 +78,8 @@ impl<'a> NoiseControls {
         Self {
             function,
             factor,
-            scale,
+            scale_x,
+            scale_y,
             octaves,
             persistence,
             lacunarity,
@@ -96,8 +101,13 @@ impl<'a> NoiseControls {
         self
     }
 
-    pub fn set_noise_scale(mut self, noise_scale: f32) -> Self {
-        self.scale = noise_scale;
+    pub fn set_noise_scale_x(mut self, noise_scale: f32) -> Self {
+        self.scale_x = noise_scale;
+        self
+    }
+
+    pub fn set_noise_scale_y(mut self, noise_scale: f32) -> Self {
+        self.scale_y = noise_scale;
         self
     }
 
@@ -145,7 +155,8 @@ impl<'a> NoiseControls {
         match message {
             Function(n) => self.function = Some(n),
             Factor(f) => self.factor = f,
-            Scale(s) => self.scale = s,
+            ScaleX(s) => self.scale_x = s,
+            ScaleY(s) => self.scale_y = s,
             Octaves(octaves) => self.octaves = octaves,
             Persistence(persistence) => self.persistence = persistence,
             Lacunarity(lacunarity) => self.lacunarity = lacunarity,
@@ -172,12 +183,20 @@ impl<'a> NoiseControls {
                 |x| x.map_or(Null, Function),
             ))
             .push(NumericInput::new(
-                "Noise Scale".to_string(),
-                self.scale,
+                "Noise Scale X".to_string(),
+                self.scale_x,
                 0.5..=50.0,
                 0.1,
                 1,
-                Scale,
+                ScaleX,
+            ))
+            .push(NumericInput::new(
+                "Noise Scale Y".to_string(),
+                self.scale_y,
+                0.5..=50.0,
+                0.1,
+                1,
+                ScaleY,
             ))
             .push(NumericInput::new(
                 "Noise Factor".to_string(),

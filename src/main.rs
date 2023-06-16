@@ -84,8 +84,8 @@ impl Default for Controls {
             },
             hue_rotation: 0.0,
             coordinates: Some(Coordinates::Polar),
-            export_width: String::from("inches"),
-            export_height: String::from("inches"),
+            export_width: String::from("inches / pixels"),
+            export_height: String::from("inches / pixels"),
             exporting: false,
         }
     }
@@ -104,7 +104,6 @@ impl Warper {
         let img = DynamicImage::ImageRgba8(
             ImageBuffer::from_raw(2000, 2000, DEFAULT_IMAGE.to_vec()).unwrap(),
         );
-        // let img = open(Path::new(&controls.img_path)).unwrap();
         let img_data = draw(&controls, &img);
         let image = image::Handle::from_pixels(img.width(), img.height(), img_data);
         Self {
@@ -237,7 +236,8 @@ impl Application for Warper {
         let angle = NoiseControls::new(
             self.controls.theta_noise.function,
             self.controls.theta_noise.factor,
-            self.controls.theta_noise.scale,
+            self.controls.theta_noise.scale_x,
+            self.controls.theta_noise.scale_y,
             self.controls.theta_noise.octaves,
             self.controls.theta_noise.persistence,
             self.controls.theta_noise.lacunarity,
@@ -259,7 +259,8 @@ impl Application for Warper {
             let radius = NoiseControls::new(
                 self.controls.radius_noise.function,
                 self.controls.radius_noise.factor,
-                self.controls.radius_noise.scale,
+                self.controls.radius_noise.scale_x,
+                self.controls.radius_noise.scale_y,
                 self.controls.radius_noise.octaves,
                 self.controls.radius_noise.persistence,
                 self.controls.radius_noise.lacunarity,
@@ -304,11 +305,13 @@ impl Application for Warper {
 fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
     let opts_theta = NoiseOpts::with_wh(img.width(), img.height())
         .factor(controls.theta_noise.factor)
-        .scales(controls.theta_noise.scale);
+        .y_scale(controls.theta_noise.scale_y)
+        .x_scale(controls.theta_noise.scale_x);
     let nf_theta = choose_noise(&controls.theta_noise);
     let opts_r = NoiseOpts::with_wh(img.width(), img.height())
         .factor(controls.radius_noise.factor)
-        .scales(controls.radius_noise.scale);
+        .y_scale(controls.theta_noise.scale_y)
+        .x_scale(controls.theta_noise.scale_x);
     let nf_r = choose_noise(&controls.radius_noise);
     let warp = match controls.coordinates.unwrap() {
         Coordinates::Polar => Warp::new(
@@ -368,14 +371,21 @@ async fn print(controls: Controls, img: DynamicImage) {
     let mut width = img.width() as u32;
     let mut height = img.height() as u32;
     if let Ok(w) = controls.export_width.parse::<f32>() {
-        width = (300.0 * w).round() as u32;
+        if w < 256.0 {
+            width = (300.0 * w).round() as u32;
+        } else {
+            width = w as u32;
+        }
         if let Ok(h) = controls.export_height.parse::<f32>() {
-            height = (300.0 * h).round() as u32;
+            if h < 256.0 {
+                height = (300.0 * h).round() as u32;
+            } else {
+                height = h as u32;
+            }
         } else {
             height = (width as f32 / aspect_ratio) as u32;
         }
     };
-
     img_buf = imageops::resize(&img_buf, width, height, imageops::FilterType::CatmullRom);
     let dirs = UserDirs::new().unwrap();
     let dir = dirs.download_dir().unwrap();
