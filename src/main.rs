@@ -10,8 +10,8 @@ use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use wassily::prelude::{
-    imageops, noise2d, noise2d_01, open, pt, Colorful, Coord, DynamicImage, ImageBuffer, NoiseOpts,
-    Rgba, Warp, WarpNode,
+    imageops, noise2d, noise2d_01, open, pt, Colorful, Coord, DynamicImage, GenericImageView,
+    ImageBuffer, NoiseOpts, Rgba, Warp, WarpNode,
 };
 
 mod gui;
@@ -138,11 +138,15 @@ impl Application for Warper {
         match message {
             Angle(a) => {
                 self.controls.theta_noise.update(a);
-                self.draw()
+                if self.controls.theta_noise.dirty {
+                    self.draw()
+                }
             }
             Radius(r) => {
                 self.controls.radius_noise.update(r);
-                self.draw()
+                if self.controls.radius_noise.dirty {
+                    self.draw()
+                }
             }
             HueRotation(r) => {
                 self.controls.hue_rotation = r;
@@ -156,7 +160,9 @@ impl Application for Warper {
                 );
             }
             ExportComplete(_) => self.controls.exporting = false,
-            PathSet(p) => self.controls.img_path = p,
+            PathSet(p) => {
+                self.controls.img_path = p;
+            }
             ImgPath => {
                 self.img = match open(Path::new(&self.controls.img_path)) {
                     Ok(img) => img,
@@ -246,6 +252,9 @@ impl Application for Warper {
             self.controls.theta_noise.sin_y_freq,
             self.controls.theta_noise.sin_x_exp,
             self.controls.theta_noise.sin_y_exp,
+            self.controls.theta_noise.img_noise_path.clone(),
+            self.controls.theta_noise.img.clone(),
+            self.controls.theta_noise.dirty,
         );
         control_panel = control_panel
             .push(if self.controls.coordinates == Some(Coordinates::Polar) {
@@ -269,6 +278,9 @@ impl Application for Warper {
                 self.controls.radius_noise.sin_y_freq,
                 self.controls.radius_noise.sin_x_exp,
                 self.controls.radius_noise.sin_y_exp,
+                self.controls.radius_noise.img_noise_path.clone(),
+                self.controls.radius_noise.img.clone(),
+                self.controls.radius_noise.dirty,
             );
             control_panel = control_panel
                 .push("Radius")
@@ -310,8 +322,8 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
     let nf_theta = choose_noise(&controls.theta_noise);
     let opts_r = NoiseOpts::with_wh(img.width(), img.height())
         .factor(controls.radius_noise.factor)
-        .y_scale(controls.theta_noise.scale_y)
-        .x_scale(controls.theta_noise.scale_x);
+        .y_scale(controls.radius_noise.scale_y)
+        .x_scale(controls.radius_noise.scale_x);
     let nf_r = choose_noise(&controls.radius_noise);
     let warp = match controls.coordinates.unwrap() {
         Coordinates::Polar => Warp::new(
@@ -354,7 +366,7 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
     }
     let par_iter = buffer.par_iter().flat_map_iter(|p| {
         let t = warp
-            .get(p.0 as f32, p.1 as f32)
+            .get_wrapped(p.0 as f32, p.1 as f32)
             .rotate_hue(controls.hue_rotation)
             .as_u8s();
         vec![t.0, t.1, t.2, t.3]
@@ -368,8 +380,7 @@ async fn print(controls: Controls, img: DynamicImage) {
         ImageBuffer::from_vec(img.width(), img.height(), draw(&controls, &img)).unwrap();
 
     let aspect_ratio = img.width() as f32 / img.height() as f32;
-    let mut width = img.width() as u32;
-    let mut height = img.height() as u32;
+    let (mut width, mut height) = img.dimensions();
     if let Ok(w) = controls.export_width.parse::<f32>() {
         if w < 256.0 {
             width = (300.0 * w).round() as u32;

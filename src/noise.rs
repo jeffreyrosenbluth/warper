@@ -4,11 +4,13 @@ use std::marker::PhantomData;
 
 use crate::gui::lpicklist::LPickList;
 use crate::gui::numeric_input::NumericInput;
-use iced::widget::{Column, Rule};
+use iced::widget::{text, text_input, Column, Rule};
 use iced::Element;
 use wassily::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+static DEFAULT_IMAGE: &'static [u8] = include_bytes!("./default.raw");
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum NoiseMessage {
     Function(NoiseFunctionName),
     Factor(f32),
@@ -22,10 +24,12 @@ pub enum NoiseMessage {
     SinYFreq(f32),
     SinXExp(i32),
     SinYExp(i32),
+    ImgNoisePathSet(String),
+    ImgNoisePath,
     Null,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct NoiseControls {
     pub function: Option<NoiseFunctionName>,
     pub factor: f32,
@@ -39,10 +43,16 @@ pub struct NoiseControls {
     pub sin_y_freq: f32,
     pub sin_x_exp: i32,
     pub sin_y_exp: i32,
+    pub img_noise_path: String,
+    pub img: DynamicImage,
+    pub dirty: bool,
 }
 
 impl Default for NoiseControls {
     fn default() -> Self {
+        let img = DynamicImage::ImageRgba8(
+            ImageBuffer::from_raw(2000, 2000, DEFAULT_IMAGE.to_vec()).unwrap(),
+        );
         Self {
             function: Some(NoiseFunctionName::Fbm),
             factor: 50.0,
@@ -56,6 +66,9 @@ impl Default for NoiseControls {
             sin_y_exp: 2,
             sin_x_exp: 2,
             sin_y_freq: 1.0,
+            img_noise_path: String::from(""),
+            img,
+            dirty: false,
         }
     }
 }
@@ -74,6 +87,9 @@ impl<'a> NoiseControls {
         sin_y_freq: f32,
         sin_x_exp: i32,
         sin_y_exp: i32,
+        img_noise_path: String,
+        img: DynamicImage,
+        dirty: bool,
     ) -> Self {
         Self {
             function,
@@ -88,6 +104,9 @@ impl<'a> NoiseControls {
             sin_y_freq,
             sin_x_exp,
             sin_y_exp,
+            img_noise_path,
+            img,
+            dirty,
         }
     }
 
@@ -150,10 +169,22 @@ impl<'a> NoiseControls {
         self
     }
 
+    pub fn set_img_noise_path(mut self, img_noise_path: String) -> Self {
+        self.img_noise_path = img_noise_path;
+        self
+    }
+
     pub fn update(&mut self, message: NoiseMessage) {
         use NoiseMessage::*;
+        self.dirty = true;
         match message {
-            Function(n) => self.function = Some(n),
+            Function(n) => {
+                self.function = Some(n);
+                if n == NoiseFunctionName::Image {
+                    self.scale_x = 1.0;
+                    self.scale_y = 1.0;
+                }
+            }
             Factor(f) => self.factor = f,
             ScaleX(s) => self.scale_x = s,
             ScaleY(s) => self.scale_y = s,
@@ -165,6 +196,18 @@ impl<'a> NoiseControls {
             SinYExp(sin_y_exp) => self.sin_y_exp = sin_y_exp,
             SinXFreq(sin_x_freq) => self.sin_x_freq = sin_x_freq,
             SinYFreq(sin_y_freq) => self.sin_y_freq = sin_y_freq,
+            ImgNoisePathSet(img_noise_path) => {
+                self.img_noise_path = img_noise_path;
+                self.dirty = false
+            }
+            ImgNoisePath => {
+                self.img = match open(std::path::Path::new(&self.img_noise_path)) {
+                    Ok(img) => img,
+                    Err(_) => DynamicImage::ImageRgba8(
+                        ImageBuffer::from_raw(2000, 2000, DEFAULT_IMAGE.to_vec()).unwrap(),
+                    ),
+                };
+            }
             Null => {}
         }
     }
@@ -177,7 +220,7 @@ impl<'a> NoiseControls {
             .push(LPickList::new(
                 "Noise Function".to_string(),
                 vec![
-                    Fbm, Billow, Ridged, Value, Cylinders, Curl, Sinusoidal, SinFbm,
+                    Fbm, Billow, Ridged, Value, Cylinders, Curl, Sinusoidal, SinFbm, Image,
                 ],
                 self.function,
                 |x| x.map_or(Null, Function),
@@ -279,6 +322,15 @@ impl<'a> NoiseControls {
                     ))
             }
         }
+        if func == Image {
+            col = col.push(text("Image Path").width(200)).push(
+                text_input("", &self.img_noise_path)
+                    .on_input(ImgNoisePathSet)
+                    .size(15)
+                    .width(200)
+                    .on_submit(ImgNoisePath),
+            );
+        }
         col.spacing(7).into()
     }
 }
@@ -293,6 +345,7 @@ pub enum NoiseFunctionName {
     Curl,
     Sinusoidal,
     SinFbm,
+    Image,
 }
 
 impl std::fmt::Display for NoiseFunctionName {
@@ -309,6 +362,7 @@ impl std::fmt::Display for NoiseFunctionName {
                 NoiseFunctionName::Curl => "Curl",
                 NoiseFunctionName::Sinusoidal => "Sinusoidal",
                 NoiseFunctionName::SinFbm => "SinFbm",
+                NoiseFunctionName::Image => "Image",
             }
         )
     }
@@ -323,6 +377,7 @@ pub enum NoiseFunction {
     Curl(Curl<Fbm<Perlin>>),
     Sinusoidal(Sinusoidal),
     SinFbm(Sin<f64, Fbm<Perlin>, 2>),
+    Image(ImgNoise),
 }
 
 impl NoiseFn<f64, 2> for NoiseFunction {
@@ -336,6 +391,7 @@ impl NoiseFn<f64, 2> for NoiseFunction {
             NoiseFunction::Curl(n) => n.get(point),
             NoiseFunction::Sinusoidal(n) => n.get(point),
             NoiseFunction::SinFbm(n) => n.get(point),
+            NoiseFunction::Image(n) => n.get(point),
         }
     }
 }
@@ -388,6 +444,7 @@ pub fn choose_noise(controls: &NoiseControls) -> NoiseFunction {
                 .set_frequency(controls.frequency as f64)
                 .set_persistence(controls.persistence as f64),
         )),
+        NoiseFunctionName::Image => NoiseFunction::Image(ImgNoise::new(controls.img.clone())),
     }
 }
 
