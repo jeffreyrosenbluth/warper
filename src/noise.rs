@@ -6,6 +6,7 @@ use crate::gui::lpicklist::LPickList;
 use crate::gui::numeric_input::NumericInput;
 use iced::widget::{text, text_input, Column, Rule};
 use iced::Element;
+use wassily::prelude::img_noise::{ColorMap, ImgNoise};
 use wassily::prelude::*;
 
 static DEFAULT_IMAGE: &'static [u8] = include_bytes!("./default.raw");
@@ -26,6 +27,7 @@ pub enum NoiseMessage {
     SinYExp(i32),
     ImgNoisePathSet(String),
     ImgNoisePath,
+    ImgColorMap(ColorMap),
     Null,
 }
 
@@ -45,13 +47,14 @@ pub struct NoiseControls {
     pub sin_y_exp: i32,
     pub img_noise_path: String,
     pub img: DynamicImage,
+    pub img_color_map: Option<ColorMap>,
     pub dirty: bool,
 }
 
 impl Default for NoiseControls {
     fn default() -> Self {
         let img = DynamicImage::ImageRgba8(
-            ImageBuffer::from_raw(2000, 2000, DEFAULT_IMAGE.to_vec()).unwrap(),
+            ImageBuffer::from_raw(1200, 1000, DEFAULT_IMAGE.to_vec()).unwrap(),
         );
         Self {
             function: Some(NoiseFunctionName::Fbm),
@@ -68,6 +71,7 @@ impl Default for NoiseControls {
             sin_y_freq: 1.0,
             img_noise_path: String::from(""),
             img,
+            img_color_map: Some(ColorMap::GrayScale),
             dirty: false,
         }
     }
@@ -89,6 +93,7 @@ impl<'a> NoiseControls {
         sin_y_exp: i32,
         img_noise_path: String,
         img: DynamicImage,
+        img_color_map: Option<ColorMap>,
         dirty: bool,
     ) -> Self {
         Self {
@@ -106,6 +111,7 @@ impl<'a> NoiseControls {
             sin_y_exp,
             img_noise_path,
             img,
+            img_color_map,
             dirty,
         }
     }
@@ -204,9 +210,12 @@ impl<'a> NoiseControls {
                 self.img = match open(std::path::Path::new(&self.img_noise_path)) {
                     Ok(img) => img,
                     Err(_) => DynamicImage::ImageRgba8(
-                        ImageBuffer::from_raw(2000, 2000, DEFAULT_IMAGE.to_vec()).unwrap(),
+                        ImageBuffer::from_raw(1200, 1000, DEFAULT_IMAGE.to_vec()).unwrap(),
                     ),
                 };
+            }
+            ImgColorMap(cm) => {
+                self.img_color_map = Some(cm);
             }
             Null => {}
         }
@@ -216,15 +225,39 @@ impl<'a> NoiseControls {
         use NoiseFunctionName::*;
         use NoiseMessage::*;
         let mut col = Column::new().push(Rule::horizontal(5));
+        col = col.push(LPickList::new(
+            "Noise Function".to_string(),
+            vec![
+                Fbm, Billow, Ridged, Value, Cylinders, Curl, Sinusoidal, SinFbm, Image,
+            ],
+            self.function,
+            |x| x.map_or(Null, Function),
+        ));
+        let func = self.function.expect("Noise function not set");
+        if func == Image {
+            col = col
+                .push(text("Image Path").width(200))
+                .push(
+                    text_input("", &self.img_noise_path)
+                        .on_input(ImgNoisePathSet)
+                        .size(15)
+                        .width(200)
+                        .on_submit(ImgNoisePath),
+                )
+                .push(LPickList::new(
+                    "Color Map".to_string(),
+                    vec![
+                        ColorMap::GrayScale,
+                        ColorMap::InvertedGray,
+                        ColorMap::Red,
+                        ColorMap::Green,
+                        ColorMap::Blue,
+                    ],
+                    self.img_color_map,
+                    |x| x.map_or(Null, ImgColorMap),
+                ));
+        }
         col = col
-            .push(LPickList::new(
-                "Noise Function".to_string(),
-                vec![
-                    Fbm, Billow, Ridged, Value, Cylinders, Curl, Sinusoidal, SinFbm, Image,
-                ],
-                self.function,
-                |x| x.map_or(Null, Function),
-            ))
             .push(NumericInput::new(
                 "Noise Scale X".to_string(),
                 self.scale_x,
@@ -249,7 +282,6 @@ impl<'a> NoiseControls {
                 0,
                 Factor,
             ));
-        let func = self.function.expect("Noise function not set");
         if func == Sinusoidal {
             col = col
                 .push(NumericInput::new(
@@ -322,15 +354,6 @@ impl<'a> NoiseControls {
                     ))
             }
         }
-        if func == Image {
-            col = col.push(text("Image Path").width(200)).push(
-                text_input("", &self.img_noise_path)
-                    .on_input(ImgNoisePathSet)
-                    .size(15)
-                    .width(200)
-                    .on_submit(ImgNoisePath),
-            );
-        }
         col.spacing(7).into()
     }
 }
@@ -396,6 +419,26 @@ impl NoiseFn<f64, 2> for NoiseFunction {
     }
 }
 
+impl Seedable for NoiseFunction {
+    fn set_seed(self, seed: u32) -> Self {
+        match self {
+            NoiseFunction::Fbm(n) => NoiseFunction::Fbm(n.set_seed(seed)),
+            NoiseFunction::Billow(n) => NoiseFunction::Billow(n.set_seed(seed)),
+            NoiseFunction::Ridged(n) => NoiseFunction::Ridged(n.set_seed(seed)),
+            NoiseFunction::Value(n) => NoiseFunction::Value(n.set_seed(seed)),
+            NoiseFunction::Cylinders(n) => NoiseFunction::Cylinders(n),
+            NoiseFunction::Curl(n) => NoiseFunction::Curl(n.set_seed(seed)),
+            NoiseFunction::Sinusoidal(n) => NoiseFunction::Sinusoidal(n),
+            NoiseFunction::SinFbm(n) => NoiseFunction::SinFbm(n),
+            NoiseFunction::Image(n) => NoiseFunction::Image(n),
+        }
+    }
+
+    fn seed(&self) -> u32 {
+        todo!()
+    }
+}
+
 pub fn choose_noise(controls: &NoiseControls) -> NoiseFunction {
     match controls.function.unwrap() {
         NoiseFunctionName::Fbm => NoiseFunction::Fbm(
@@ -444,7 +487,9 @@ pub fn choose_noise(controls: &NoiseControls) -> NoiseFunction {
                 .set_frequency(controls.frequency as f64)
                 .set_persistence(controls.persistence as f64),
         )),
-        NoiseFunctionName::Image => NoiseFunction::Image(ImgNoise::new(controls.img.clone())),
+        NoiseFunctionName::Image => NoiseFunction::Image(
+            ImgNoise::new(controls.img.clone()).set_map(controls.img_color_map.unwrap()),
+        ),
     }
 }
 
@@ -489,7 +534,6 @@ where
 {
     /// Outputs a value.
     pub source: Source,
-
     phantom: PhantomData<T>,
 }
 

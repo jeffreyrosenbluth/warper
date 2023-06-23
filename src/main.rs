@@ -1,7 +1,8 @@
 use directories::UserDirs;
 use iced::{
     widget::{
-        button, column, image, radio, row, scrollable, text, text_input, Column, Container, Rule,
+        button, column, image, radio, row, scrollable, text, text_input, toggler, Column,
+        Container, Rule,
     },
     Application, Command, Element, Settings, Theme,
 };
@@ -11,16 +12,21 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use wassily::prelude::{
     imageops, noise2d, noise2d_01, open, pt, Colorful, Coord, DynamicImage, GenericImageView,
-    ImageBuffer, NoiseOpts, Rgba, Warp, WarpNode,
+    ImageBuffer, NoiseOpts, Rgba, Seedable, Warp, WarpNode,
 };
 
+mod dominos;
 mod gui;
 mod noise;
 
 use crate::gui::numeric_input::NumericInput;
 use crate::noise::*;
+use dominos::*;
 
 static DEFAULT_IMAGE: &'static [u8] = include_bytes!("./default.raw");
+
+const WIDTH: u32 = 4800;
+const HEIGHT: u32 = 3600;
 
 pub fn main() -> iced::Result {
     env_logger::init();
@@ -58,6 +64,7 @@ pub enum Message {
     CoordinatesMessage(Coordinates),
     WidthSet(String),
     HeightSet(String),
+    Sync(bool),
     Null,
 }
 
@@ -71,22 +78,27 @@ struct Controls {
     exporting: bool,
     export_width: String,
     export_height: String,
+    sync: bool,
 }
 
 impl Default for Controls {
     fn default() -> Self {
         Self {
             img_path: String::from(""),
-            theta_noise: NoiseControls::default(),
+            theta_noise: NoiseControls {
+                factor: 500.0,
+                ..Default::default()
+            },
             radius_noise: NoiseControls {
                 factor: 1000.0,
                 ..Default::default()
             },
-            hue_rotation: 0.0,
-            coordinates: Some(Coordinates::Polar),
+            hue_rotation: 50.0,
+            coordinates: Some(Coordinates::Cartesian),
             export_width: String::from("inches / pixels"),
             export_height: String::from("inches / pixels"),
             exporting: false,
+            sync: true,
         }
     }
 }
@@ -101,11 +113,13 @@ struct Warper {
 impl Warper {
     pub fn new() -> Self {
         let controls = Controls::default();
-        let img = DynamicImage::ImageRgba8(
-            ImageBuffer::from_raw(2000, 2000, DEFAULT_IMAGE.to_vec()).unwrap(),
-        );
-        let img_data = draw(&controls, &img);
-        let image = image::Handle::from_pixels(img.width(), img.height(), img_data);
+        let img_data = draw_dominos(WIDTH, HEIGHT, 300).pixmap.take();
+        let img = DynamicImage::ImageRgba8(ImageBuffer::from_raw(WIDTH, HEIGHT, img_data).unwrap());
+        // let img = DynamicImage::ImageRgba8(
+        //     ImageBuffer::from_raw(1200, 1000, DEFAULT_IMAGE.to_vec()).unwrap(),
+        // );
+        let art_data = draw(&controls, &img);
+        let image = image::Handle::from_pixels(img.width(), img.height(), art_data);
         Self {
             controls,
             img,
@@ -167,7 +181,7 @@ impl Application for Warper {
                 self.img = match open(Path::new(&self.controls.img_path)) {
                     Ok(img) => img,
                     Err(_) => DynamicImage::ImageRgba8(
-                        ImageBuffer::from_raw(2000, 2000, DEFAULT_IMAGE.to_vec()).unwrap(),
+                        ImageBuffer::from_raw(1200, 1000, DEFAULT_IMAGE.to_vec()).unwrap(),
                     ),
                 };
                 self.draw()
@@ -180,6 +194,10 @@ impl Application for Warper {
                 self.controls.export_width = w;
             }
             HeightSet(h) => self.controls.export_height = h,
+            Sync(b) => {
+                self.controls.sync = b;
+                self.draw()
+            }
             Null => {}
         }
         Command::none()
@@ -219,6 +237,9 @@ impl Application for Warper {
                 )
                 .spacing(15),
             )
+            .push(Container::new(
+                toggler("Sync".to_owned(), self.controls.sync, Sync).text_size(15),
+            ))
             .push(
                 row!(
                     text("Width").size(15).width(90),
@@ -254,17 +275,18 @@ impl Application for Warper {
             self.controls.theta_noise.sin_y_exp,
             self.controls.theta_noise.img_noise_path.clone(),
             self.controls.theta_noise.img.clone(),
+            self.controls.theta_noise.img_color_map,
             self.controls.theta_noise.dirty,
         );
         control_panel = control_panel
             .push(if self.controls.coordinates == Some(Coordinates::Polar) {
                 text("Angle")
             } else {
-                text("Warp Function")
+                text("X Coordinate")
             })
             .push(angle.view().map(Message::Angle));
 
-        if self.controls.coordinates == Some(Coordinates::Polar) {
+        if !self.controls.sync {
             let radius = NoiseControls::new(
                 self.controls.radius_noise.function,
                 self.controls.radius_noise.factor,
@@ -280,11 +302,16 @@ impl Application for Warper {
                 self.controls.radius_noise.sin_y_exp,
                 self.controls.radius_noise.img_noise_path.clone(),
                 self.controls.radius_noise.img.clone(),
+                self.controls.radius_noise.img_color_map,
                 self.controls.radius_noise.dirty,
             );
-            control_panel = control_panel
-                .push("Radius")
-                .push(radius.view().map(Message::Radius))
+            control_panel =
+                control_panel.push(if self.controls.coordinates == Some(Coordinates::Polar) {
+                    text("Radius")
+                } else {
+                    text("Y Coordinate")
+                });
+            control_panel = control_panel.push(radius.view().map(Message::Radius))
         }
         control_panel = control_panel.push(NumericInput::new(
             "Hue Rotation".to_string(),
@@ -320,17 +347,25 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
         .y_scale(controls.theta_noise.scale_y)
         .x_scale(controls.theta_noise.scale_x);
     let nf_theta = choose_noise(&controls.theta_noise);
-    let opts_r = NoiseOpts::with_wh(img.width(), img.height())
-        .factor(controls.radius_noise.factor)
-        .y_scale(controls.radius_noise.scale_y)
-        .x_scale(controls.radius_noise.scale_x);
-    let nf_r = choose_noise(&controls.radius_noise);
+    let opts_r = if controls.sync {
+        opts_theta.clone()
+    } else {
+        NoiseOpts::with_wh(img.width(), img.height())
+            .factor(controls.radius_noise.factor)
+            .y_scale(controls.radius_noise.scale_y)
+            .x_scale(controls.radius_noise.scale_x)
+    };
+    let nf_r = if controls.sync {
+        choose_noise(&controls.theta_noise)
+    } else {
+        choose_noise(&controls.radius_noise).set_seed(98713)
+    };
     let warp = match controls.coordinates.unwrap() {
         Coordinates::Polar => Warp::new(
             Arc::new(move |z| {
                 pt(
                     noise2d(&nf_theta, &opts_theta, z.x, z.y),
-                    noise2d_01(&nf_r, &opts_r, z.x + 1.71, z.y + 4.13),
+                    noise2d_01(&nf_r, &opts_r, z.x, z.y),
                 )
             }),
             WarpNode::Img(img, img.width() as f32, img.height() as f32),
@@ -340,7 +375,7 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
             Arc::new(move |z| {
                 pt(
                     noise2d(&nf_theta, &opts_theta, z.x, z.y),
-                    noise2d(&nf_theta, &opts_theta, z.x + 1.71, z.y + 4.13),
+                    noise2d(&nf_r, &opts_r, z.x, z.y),
                 )
             }),
             WarpNode::Img(img, img.width() as f32, img.height() as f32),
@@ -350,7 +385,7 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
             Arc::new(move |z| {
                 pt(
                     noise2d(&nf_theta, &opts_theta, z.x, z.y),
-                    noise2d(&nf_theta, &opts_theta, z.x + 1.71, z.y + 4.13),
+                    noise2d(&nf_r, &opts_r, z.x, z.y),
                 )
             }),
             WarpNode::Img(img, img.width() as f32, img.height() as f32),
