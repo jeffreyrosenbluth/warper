@@ -11,8 +11,8 @@ use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use wassily::prelude::{
-    imageops, noise2d, noise2d_01, open, pt, Colorful, Coord, DynamicImage, GenericImageView,
-    ImageBuffer, NoiseOpts, Rgba, Seedable, Warp, WarpNode,
+    imageops, img_noise, noise2d, noise2d_01, open, pt, Colorful, Coord, DynamicImage,
+    GenericImageView, ImageBuffer, NoiseOpts, Rgba, Seedable, Warp, WarpNode,
 };
 
 mod dominos;
@@ -175,9 +175,12 @@ impl Application for Warper {
             }
             ImgPath => {
                 self.img = match open(Path::new(&self.controls.img_path)) {
-                    Ok(img) => img, Err(_) => {
-                        let img_data = draw_dominos(WIDTH, HEIGHT, SIZE).pixmap.take(); 
-                        DynamicImage::ImageRgba8(ImageBuffer::from_raw(WIDTH, HEIGHT, img_data).unwrap())
+                    Ok(img) => img,
+                    Err(_) => {
+                        let img_data = draw_dominos(WIDTH, HEIGHT, SIZE).pixmap.take();
+                        DynamicImage::ImageRgba8(
+                            ImageBuffer::from_raw(WIDTH, HEIGHT, img_data).unwrap(),
+                        )
                     }
                 };
                 self.draw()
@@ -342,7 +345,9 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
     let opts_r = if controls.sync {
         let factor = if controls.coordinates == Some(Coordinates::Polar) {
             30.0 * opts_theta.factor
-        } else{opts_theta.factor};
+        } else {
+            opts_theta.factor
+        };
         opts_theta.factor(factor)
     } else {
         NoiseOpts::with_wh(img.width(), img.height())
@@ -351,7 +356,9 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
             .x_scale(controls.radius_noise.scale_x)
     };
     let nf_r = if controls.sync {
-        choose_noise(&controls.theta_noise)
+        let mut tn = controls.theta_noise.clone();
+        tn.img_color_map = Some(img_noise::ColorMap::RotatedGray);
+        choose_noise(&tn)
     } else {
         choose_noise(&controls.radius_noise).set_seed(98713)
     };

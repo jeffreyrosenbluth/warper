@@ -226,7 +226,7 @@ impl<'a> NoiseControls {
                     "Color Map".to_string(),
                     vec![
                         ColorMap::GrayScale,
-                        ColorMap::InvertedGray,
+                        ColorMap::RotatedGray,
                         ColorMap::Red,
                         ColorMap::Green,
                         ColorMap::Blue,
@@ -469,17 +469,13 @@ impl Default for Sinusoidal {
 
 impl Sinusoidal {
     pub fn new(x_freq: f64, y_freq: f64) -> Self {
-        Self {
-            x_freq,
-            y_freq,
-        }
+        Self { x_freq, y_freq }
     }
 }
 
 impl NoiseFn<f64, 2> for Sinusoidal {
     fn get(&self, point: [f64; 2]) -> f64 {
-        0.5 * ((self.x_freq * point[0]).sin()
-            + (self.y_freq * point[1]).sin())
+        0.5 * ((self.x_freq * point[0]).sin() + (self.y_freq * point[1]).sin())
     }
 }
 pub struct Sin<T, Source, const DIM: usize>
