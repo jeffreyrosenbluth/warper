@@ -9,7 +9,7 @@ use iced::Element;
 use wassily::prelude::img_noise::{ColorMap, ImgNoise};
 use wassily::prelude::*;
 
-static DEFAULT_IMAGE: &'static [u8] = include_bytes!("./default.raw");
+static DEFAULT_IMAGE: &[u8] = include_bytes!("./default.raw");
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum NoiseMessage {
@@ -23,8 +23,6 @@ pub enum NoiseMessage {
     Frequency(f32),
     SinXFreq(f32),
     SinYFreq(f32),
-    SinXExp(i32),
-    SinYExp(i32),
     ImgNoisePathSet(String),
     ImgNoisePath,
     ImgColorMap(ColorMap),
@@ -43,8 +41,6 @@ pub struct NoiseControls {
     pub frequency: f32,
     pub sin_x_freq: f32,
     pub sin_y_freq: f32,
-    pub sin_x_exp: i32,
-    pub sin_y_exp: i32,
     pub img_noise_path: String,
     pub img: DynamicImage,
     pub img_color_map: Option<ColorMap>,
@@ -66,8 +62,6 @@ impl Default for NoiseControls {
             lacunarity: 2.0,
             frequency: 1.0,
             sin_x_freq: 1.0,
-            sin_y_exp: 2,
-            sin_x_exp: 2,
             sin_y_freq: 1.0,
             img_noise_path: String::from(""),
             img,
@@ -89,8 +83,6 @@ impl<'a> NoiseControls {
         frequency: f32,
         sin_x_freq: f32,
         sin_y_freq: f32,
-        sin_x_exp: i32,
-        sin_y_exp: i32,
         img_noise_path: String,
         img: DynamicImage,
         img_color_map: Option<ColorMap>,
@@ -107,8 +99,6 @@ impl<'a> NoiseControls {
             frequency,
             sin_x_freq,
             sin_y_freq,
-            sin_x_exp,
-            sin_y_exp,
             img_noise_path,
             img,
             img_color_map,
@@ -165,16 +155,6 @@ impl<'a> NoiseControls {
         self
     }
 
-    pub fn set_sin_x_exp(mut self, sin_x_exp: i32) -> Self {
-        self.sin_x_exp = sin_x_exp;
-        self
-    }
-
-    pub fn set_sin_y_exp(mut self, sin_y_exp: i32) -> Self {
-        self.sin_y_exp = sin_y_exp;
-        self
-    }
-
     pub fn set_img_noise_path(mut self, img_noise_path: String) -> Self {
         self.img_noise_path = img_noise_path;
         self
@@ -198,8 +178,6 @@ impl<'a> NoiseControls {
             Persistence(persistence) => self.persistence = persistence,
             Lacunarity(lacunarity) => self.lacunarity = lacunarity,
             Frequency(frequency) => self.frequency = frequency,
-            SinXExp(sin_x_exp) => self.sin_x_exp = sin_x_exp,
-            SinYExp(sin_y_exp) => self.sin_y_exp = sin_y_exp,
             SinXFreq(sin_x_freq) => self.sin_x_freq = sin_x_freq,
             SinYFreq(sin_y_freq) => self.sin_y_freq = sin_y_freq,
             ImgNoisePathSet(img_noise_path) => {
@@ -299,22 +277,6 @@ impl<'a> NoiseControls {
                     0.1,
                     1,
                     SinYFreq,
-                ))
-                .push(NumericInput::new(
-                    "Sine X Exponent".to_string(),
-                    self.sin_x_exp,
-                    1..=10,
-                    1,
-                    0,
-                    SinXExp,
-                ))
-                .push(NumericInput::new(
-                    "Sine Y Exponent".to_string(),
-                    self.sin_y_exp,
-                    1..=10,
-                    1,
-                    0,
-                    SinYExp,
                 ));
         }
         if func == Fbm || func == Ridged || func == Billow || func == Curl || func == SinFbm {
@@ -477,8 +439,6 @@ pub fn choose_noise(controls: &NoiseControls) -> NoiseFunction {
         NoiseFunctionName::Sinusoidal => NoiseFunction::Sinusoidal(Sinusoidal::new(
             controls.sin_x_freq as f64,
             controls.sin_y_freq as f64,
-            controls.sin_x_exp,
-            controls.sin_y_exp,
         )),
         NoiseFunctionName::SinFbm => NoiseFunction::SinFbm(Sin::new(
             Fbm::<Perlin>::default()
@@ -496,8 +456,6 @@ pub fn choose_noise(controls: &NoiseControls) -> NoiseFunction {
 pub struct Sinusoidal {
     x_freq: f64,
     y_freq: f64,
-    x_exp: i32,
-    y_exp: i32,
 }
 
 impl Default for Sinusoidal {
@@ -505,27 +463,23 @@ impl Default for Sinusoidal {
         Self {
             x_freq: 1.0,
             y_freq: 1.0,
-            x_exp: 2,
-            y_exp: 2,
         }
     }
 }
 
 impl Sinusoidal {
-    pub fn new(x_freq: f64, y_freq: f64, x_exp: i32, y_exp: i32) -> Self {
+    pub fn new(x_freq: f64, y_freq: f64) -> Self {
         Self {
             x_freq,
             y_freq,
-            x_exp,
-            y_exp,
         }
     }
 }
 
 impl NoiseFn<f64, 2> for Sinusoidal {
     fn get(&self, point: [f64; 2]) -> f64 {
-        0.5 * ((self.x_freq * point[0]).sin().powi(self.x_exp)
-            + (self.y_freq * point[1]).sin().powi(self.y_exp))
+        0.5 * ((self.x_freq * point[0]).sin()
+            + (self.y_freq * point[1]).sin())
     }
 }
 pub struct Sin<T, Source, const DIM: usize>

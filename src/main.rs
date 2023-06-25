@@ -21,12 +21,11 @@ mod noise;
 
 use crate::gui::numeric_input::NumericInput;
 use crate::noise::*;
-use dominos::*;
-
-static DEFAULT_IMAGE: &'static [u8] = include_bytes!("./default.raw");
+use dominos::draw_dominos;
 
 const WIDTH: u32 = 4800;
 const HEIGHT: u32 = 3600;
+const SIZE: u32 = 400;
 
 pub fn main() -> iced::Result {
     env_logger::init();
@@ -93,7 +92,7 @@ impl Default for Controls {
                 factor: 1000.0,
                 ..Default::default()
             },
-            hue_rotation: 50.0,
+            hue_rotation: 0.0,
             coordinates: Some(Coordinates::Cartesian),
             export_width: String::from("inches / pixels"),
             export_height: String::from("inches / pixels"),
@@ -113,11 +112,8 @@ struct Warper {
 impl Warper {
     pub fn new() -> Self {
         let controls = Controls::default();
-        let img_data = draw_dominos(WIDTH, HEIGHT, 300).pixmap.take();
+        let img_data = draw_dominos(WIDTH, HEIGHT, SIZE).pixmap.take();
         let img = DynamicImage::ImageRgba8(ImageBuffer::from_raw(WIDTH, HEIGHT, img_data).unwrap());
-        // let img = DynamicImage::ImageRgba8(
-        //     ImageBuffer::from_raw(1200, 1000, DEFAULT_IMAGE.to_vec()).unwrap(),
-        // );
         let art_data = draw(&controls, &img);
         let image = image::Handle::from_pixels(img.width(), img.height(), art_data);
         Self {
@@ -179,10 +175,10 @@ impl Application for Warper {
             }
             ImgPath => {
                 self.img = match open(Path::new(&self.controls.img_path)) {
-                    Ok(img) => img,
-                    Err(_) => DynamicImage::ImageRgba8(
-                        ImageBuffer::from_raw(1200, 1000, DEFAULT_IMAGE.to_vec()).unwrap(),
-                    ),
+                    Ok(img) => img, Err(_) => {
+                        let img_data = draw_dominos(WIDTH, HEIGHT, SIZE).pixmap.take(); 
+                        DynamicImage::ImageRgba8(ImageBuffer::from_raw(WIDTH, HEIGHT, img_data).unwrap())
+                    }
                 };
                 self.draw()
             }
@@ -271,8 +267,6 @@ impl Application for Warper {
             self.controls.theta_noise.frequency,
             self.controls.theta_noise.sin_x_freq,
             self.controls.theta_noise.sin_y_freq,
-            self.controls.theta_noise.sin_x_exp,
-            self.controls.theta_noise.sin_y_exp,
             self.controls.theta_noise.img_noise_path.clone(),
             self.controls.theta_noise.img.clone(),
             self.controls.theta_noise.img_color_map,
@@ -298,8 +292,6 @@ impl Application for Warper {
                 self.controls.radius_noise.frequency,
                 self.controls.radius_noise.sin_x_freq,
                 self.controls.radius_noise.sin_y_freq,
-                self.controls.radius_noise.sin_x_exp,
-                self.controls.radius_noise.sin_y_exp,
                 self.controls.radius_noise.img_noise_path.clone(),
                 self.controls.radius_noise.img.clone(),
                 self.controls.radius_noise.img_color_map,
@@ -348,7 +340,10 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
         .x_scale(controls.theta_noise.scale_x);
     let nf_theta = choose_noise(&controls.theta_noise);
     let opts_r = if controls.sync {
-        opts_theta.clone()
+        let factor = if controls.coordinates == Some(Coordinates::Polar) {
+            30.0 * opts_theta.factor
+        } else{opts_theta.factor};
+        opts_theta.factor(factor)
     } else {
         NoiseOpts::with_wh(img.width(), img.height())
             .factor(controls.radius_noise.factor)

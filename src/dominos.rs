@@ -9,12 +9,12 @@ pub fn rand_okhsl_hue<R: RngCore>(rng: &mut R, hue_range: Range<f32>) -> Color {
     let h: f32 = rng.gen_range(hue_range);
     let s: f32 = 0.65 + normal.sample(rng);
     let l: f32 = 0.5 + normal.sample(rng);
-    Okhsl::new(h, s.clamp(0.0, 1.0), l.clamp(0.0, 1.0)).to_color()
+    Okhsl::new(h, s.clamp(0.0, 1.0), l.clamp(0.0, 0.9)).to_color()
 }
 
 pub fn draw_dominos(width: u32, height: u32, size: u32) -> Canvas {
     let mut canvas = Canvas::new(width, height);
-    let mut dominos = mk_dominos(width / (2 * size as u32), height / size as u32);
+    let mut dominos = mk_dominos(width / (2 * size), height / size);
     let mut rng = SmallRng::seed_from_u64(0);
     for _ in 0..10_000 {
         let sq = squares(&dominos).into_iter().choose(&mut rng).unwrap();
@@ -22,8 +22,8 @@ pub fn draw_dominos(width: u32, height: u32, size: u32) -> Canvas {
     }
     for d in dominos {
         let p = pt(d.x as f32 * size as f32, d.y as f32 * size as f32);
-        let color1 = rand_okhsl_hue(&mut rng, 0.0..20.0);
-        let color2 = rand_okhsl_hue(&mut rng, 0.0..20.0);
+        let color1 = rand_okhsl_hue(&mut rng, 50.0..80.0);
+        let color2 = rand_okhsl_hue(&mut rng, 230.0..260.0);
         let stops = vec![
             GradientStop::new(0.0, color1),
             GradientStop::new(1.0, color2),
