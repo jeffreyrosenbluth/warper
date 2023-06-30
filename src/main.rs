@@ -11,8 +11,8 @@ use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use wassily::prelude::{
-    imageops, img_noise, noise2d, noise2d_01, open, pt, Colorful, Coord, DynamicImage,
-    GenericImageView, ImageBuffer, NoiseOpts, Rgba, Seedable, Warp, WarpNode,
+    imageops, img_noise, noise2d, noise2d_01, open, pt, Colorful, Coord, DynamicImage, Fbm,
+    GenericImageView, ImageBuffer, NoiseOpts, Perlin, Rgba, Seedable, Warp, WarpNode,
 };
 
 mod dominos;
@@ -124,8 +124,54 @@ impl Warper {
     }
 
     pub fn draw(&mut self) {
+        // let img = self.img.blur(20.0);
         let img_data = draw(&self.controls, &self.img);
         self.image = image::Handle::from_pixels(self.img.width(), self.img.height(), img_data);
+    }
+
+    async fn print(handle: image::Handle, controls: Controls) {
+        let (w, h, pixels) = match handle.data() {
+            iced_native::image::Data::Path(_) => unreachable!(),
+            iced_native::image::Data::Bytes(_) => unreachable!(),
+            iced_native::image::Data::Rgba {
+                width,
+                height,
+                pixels,
+            } => (width, height, pixels),
+        };
+        let img_buf: ImageBuffer<Rgba<u8>, Vec<u8>> =
+            ImageBuffer::from_vec(*w, *h, pixels.to_vec()).unwrap();
+        let aspect_ratio = *w as f32 / *h as f32;
+        let (mut width, mut height) = (*w, *h);
+        if let Ok(w) = controls.export_width.parse::<f32>() {
+            if w < 256.0 {
+                width = (300.0 * w).round() as u32;
+            } else {
+                width = w as u32;
+            }
+            if let Ok(h) = controls.export_height.parse::<f32>() {
+                if h < 256.0 {
+                    height = (300.0 * h).round() as u32;
+                } else {
+                    height = h as u32;
+                }
+            } else {
+                height = (width as f32 / aspect_ratio) as u32;
+            }
+        };
+        let img_buf = imageops::resize(&img_buf, width, height, imageops::FilterType::CatmullRom);
+        let dirs = UserDirs::new().unwrap();
+        let dir = dirs.download_dir().unwrap();
+        let path = format!(r"{}/{}", dir.to_string_lossy(), "warp");
+        let mut num = 0;
+        let mut sketch = PathBuf::from(format!(r"{path}_{num}"));
+        sketch.set_extension("png");
+        while sketch.exists() {
+            num += 1;
+            sketch = PathBuf::from(format!(r"{path}_{num}"));
+            sketch.set_extension("png");
+        }
+        img_buf.save(sketch).unwrap();
     }
 }
 
@@ -164,8 +210,10 @@ impl Application for Warper {
             }
             Export => {
                 self.controls.exporting = true;
+                let handel = self.image.clone();
                 return Command::perform(
-                    print(self.controls.clone(), self.img.clone()),
+                    Warper::print(handel, self.controls.clone()),
+                    // print(self.controls.clone(), self.img.clone()),
                     ExportComplete,
                 );
             }
@@ -357,7 +405,7 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
     };
     let nf_r = if controls.sync {
         let mut tn = controls.theta_noise.clone();
-        tn.img_color_map = Some(img_noise::ColorMap::RotatedGray);
+        tn.img_color_map = Some(img_noise::ColorMap::RedGreen);
         choose_noise(&tn)
     } else {
         choose_noise(&controls.radius_noise).set_seed(98713)
@@ -394,6 +442,21 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
             Coord::Absolute,
         ),
     };
+    // let warp2 = Warp::new(
+    //     Arc::new(move |z| {
+    //         pt(
+    //             noise2d(
+    //                 Fbm::<Perlin>::default().set_seed(97813),
+    //                 &opts_theta,
+    //                 z.x,
+    //                 z.y,
+    //             ),
+    //             noise2d(Fbm::<Perlin>::default().set_seed(1879), &opts_r, z.x, z.y),
+    //         )
+    //     }),
+    //     WarpNode::More(Arc::new(warp)),
+    //     Coord::Cartesian,
+    // );
     let mut buffer: Vec<(u32, u32)> =
         Vec::with_capacity(img.width() as usize * img.height() as usize);
     for i in 0..img.height() {
@@ -410,41 +473,4 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
     });
     let img_data: Vec<u8> = par_iter.collect();
     img_data
-}
-
-async fn print(controls: Controls, img: DynamicImage) {
-    let mut img_buf: ImageBuffer<Rgba<u8>, Vec<u8>> =
-        ImageBuffer::from_vec(img.width(), img.height(), draw(&controls, &img)).unwrap();
-
-    let aspect_ratio = img.width() as f32 / img.height() as f32;
-    let (mut width, mut height) = img.dimensions();
-    if let Ok(w) = controls.export_width.parse::<f32>() {
-        if w < 256.0 {
-            width = (300.0 * w).round() as u32;
-        } else {
-            width = w as u32;
-        }
-        if let Ok(h) = controls.export_height.parse::<f32>() {
-            if h < 256.0 {
-                height = (300.0 * h).round() as u32;
-            } else {
-                height = h as u32;
-            }
-        } else {
-            height = (width as f32 / aspect_ratio) as u32;
-        }
-    };
-    img_buf = imageops::resize(&img_buf, width, height, imageops::FilterType::CatmullRom);
-    let dirs = UserDirs::new().unwrap();
-    let dir = dirs.download_dir().unwrap();
-    let path = format!(r"{}/{}", dir.to_string_lossy(), "warp");
-    let mut num = 0;
-    let mut sketch = PathBuf::from(format!(r"{path}_{num}"));
-    sketch.set_extension("png");
-    while sketch.exists() {
-        num += 1;
-        sketch = PathBuf::from(format!(r"{path}_{num}"));
-        sketch.set_extension("png");
-    }
-    img_buf.save(sketch).unwrap();
 }

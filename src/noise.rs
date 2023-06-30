@@ -226,40 +226,41 @@ impl<'a> NoiseControls {
                     "Color Map".to_string(),
                     vec![
                         ColorMap::GrayScale,
-                        ColorMap::RotatedGray,
-                        ColorMap::Red,
-                        ColorMap::Green,
-                        ColorMap::Blue,
+                        ColorMap::Lightness,
+                        ColorMap::RedGreen,
+                        ColorMap::YellowBlue,
                     ],
                     self.img_color_map,
                     |x| x.map_or(Null, ImgColorMap),
                 ));
         }
-        col = col
-            .push(NumericInput::new(
-                "Noise Scale X".to_string(),
-                self.scale_x,
-                0.5..=50.0,
-                0.1,
-                1,
-                ScaleX,
-            ))
-            .push(NumericInput::new(
-                "Noise Scale Y".to_string(),
-                self.scale_y,
-                0.5..=50.0,
-                0.1,
-                1,
-                ScaleY,
-            ))
-            .push(NumericInput::new(
-                "Noise Factor".to_string(),
-                self.factor,
-                1.0..=5000.0,
-                1.0,
-                0,
-                Factor,
-            ));
+        if func != Image {
+            col = col
+                .push(NumericInput::new(
+                    "Noise Scale X".to_string(),
+                    self.scale_x,
+                    0.5..=50.0,
+                    0.1,
+                    1,
+                    ScaleX,
+                ))
+                .push(NumericInput::new(
+                    "Noise Scale Y".to_string(),
+                    self.scale_y,
+                    0.5..=50.0,
+                    0.1,
+                    1,
+                    ScaleY,
+                ))
+        }
+        col = col.push(NumericInput::new(
+            "Noise Factor".to_string(),
+            self.factor,
+            1.0..=5000.0,
+            1.0,
+            0,
+            Factor,
+        ));
         if func == Sinusoidal {
             col = col
                 .push(NumericInput::new(

@@ -1103,9 +1103,9 @@ dependencies = [
 
 [[package]]
 name = "half"
-version = "2.3.0"
+version = "2.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9906a89f1724975a455316ae0554ceaa45ad83bb336f1125a87bfbdb9197cfa0"
+checksum = "bc52e53916c08643f1b56ec082790d1e86a32e58dc5268f897f313fbae7b4872"
 dependencies = [
  "cfg-if",
  "crunchy",
@@ -1455,9 +1455,9 @@ checksum = "03087c2bad5e1034e8cace5926dec053fb3790248370865f5117a7d0213354c8"
 
 [[package]]
 name = "libc"
-version = "0.2.146"
+version = "0.2.147"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f92be4933c13fd498862a9e02a3055f8a8d9c039ce33db97306fd5a6caa7f29b"
+checksum = "b4668fb0ea861c1df094127ac5f1da3409a82116a4ba74fca2e58ef927159bb3"
 
 [[package]]
 name = "libloading"
@@ -2886,7 +2886,6 @@ dependencies = [
 [[package]]
 name = "wassily"
 version = "0.1.0"
-source = "git+https://github.com/jeffreyrosenbluth/wassily#7c43fe410685f043c6b75c32012f829bad81d05a"
 dependencies = [
  "color-thief",
  "image",
