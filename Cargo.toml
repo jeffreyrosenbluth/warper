@@ -7,8 +7,8 @@ edition = "2021"
 
 [dependencies]
 iced = { version = "0.9.0", features = ["image", "tokio"] }
-# wassily = { git = "https://github.com/jeffreyrosenbluth/wassily" }
-wassily = {path = "/Users/jeffreyrosenbluth/Rust/wassily"}
+wassily = { git = "https://github.com/jeffreyrosenbluth/wassily" }
+# wassily = {path = "/Users/jeffreyrosenbluth/Rust/wassily"}
 rand = { version = "0.8.5", features = ["small_rng"] }
 num-traits = "0.2.15"
 # iced_aw = { git = "https://github.com/jeffreyrosenbluth/iced_aw", default-features = false, features = [

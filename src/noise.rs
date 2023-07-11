@@ -18,8 +18,6 @@ pub enum NoiseMessage {
     ScaleX(f32),
     ScaleY(f32),
     Octaves(i32),
-    Persistence(f32),
-    Lacunarity(f32),
     Frequency(f32),
     SinXFreq(f32),
     SinYFreq(f32),
@@ -36,8 +34,6 @@ pub struct NoiseControls {
     pub scale_x: f32,
     pub scale_y: f32,
     pub octaves: i32,
-    pub persistence: f32,
-    pub lacunarity: f32,
     pub frequency: f32,
     pub sin_x_freq: f32,
     pub sin_y_freq: f32,
@@ -58,14 +54,12 @@ impl Default for NoiseControls {
             scale_x: 8.0,
             scale_y: 8.0,
             octaves: 1,
-            persistence: 0.5,
-            lacunarity: 2.0,
             frequency: 1.0,
             sin_x_freq: 1.0,
             sin_y_freq: 1.0,
             img_noise_path: String::from(""),
             img,
-            img_color_map: Some(ColorMap::GrayScale),
+            img_color_map: Some(ColorMap::Lightness),
             dirty: false,
         }
     }
@@ -78,8 +72,6 @@ impl<'a> NoiseControls {
         scale_x: f32,
         scale_y: f32,
         octaves: i32,
-        persistence: f32,
-        lacunarity: f32,
         frequency: f32,
         sin_x_freq: f32,
         sin_y_freq: f32,
@@ -94,8 +86,6 @@ impl<'a> NoiseControls {
             scale_x,
             scale_y,
             octaves,
-            persistence,
-            lacunarity,
             frequency,
             sin_x_freq,
             sin_y_freq,
@@ -131,15 +121,6 @@ impl<'a> NoiseControls {
         self
     }
 
-    pub fn set_persistence(mut self, persistence: f32) -> Self {
-        self.persistence = persistence;
-        self
-    }
-
-    pub fn set_lacunarity(mut self, lacunarity: f32) -> Self {
-        self.lacunarity = lacunarity;
-        self
-    }
     pub fn set_frequency(mut self, frequency: f32) -> Self {
         self.frequency = frequency;
         self
@@ -175,8 +156,6 @@ impl<'a> NoiseControls {
             ScaleX(s) => self.scale_x = s,
             ScaleY(s) => self.scale_y = s,
             Octaves(octaves) => self.octaves = octaves,
-            Persistence(persistence) => self.persistence = persistence,
-            Lacunarity(lacunarity) => self.lacunarity = lacunarity,
             Frequency(frequency) => self.frequency = frequency,
             SinXFreq(sin_x_freq) => self.sin_x_freq = sin_x_freq,
             SinYFreq(sin_y_freq) => self.sin_y_freq = sin_y_freq,
@@ -225,7 +204,6 @@ impl<'a> NoiseControls {
                 .push(LPickList::new(
                     "Color Map".to_string(),
                     vec![
-                        ColorMap::GrayScale,
                         ColorMap::Lightness,
                         ColorMap::RedGreen,
                         ColorMap::YellowBlue,
@@ -290,31 +268,14 @@ impl<'a> NoiseControls {
                 Octaves,
             ));
             if self.octaves > 1 {
-                col = col
-                    .push(NumericInput::new(
-                        "Persistence".to_string(),
-                        self.persistence,
-                        0.05..=0.95,
-                        0.05,
-                        1,
-                        Persistence,
-                    ))
-                    .push(NumericInput::new(
-                        "Lacunarity".to_string(),
-                        self.lacunarity,
-                        0.1..=4.00,
-                        0.1,
-                        1,
-                        Lacunarity,
-                    ))
-                    .push(NumericInput::new(
-                        "Frequency".to_string(),
-                        self.frequency,
-                        0.1..=4.00,
-                        0.1,
-                        1,
-                        Frequency,
-                    ))
+                col = col.push(NumericInput::new(
+                    "Frequency".to_string(),
+                    self.frequency,
+                    0.1..=4.00,
+                    0.1,
+                    1,
+                    Frequency,
+                ))
             }
         }
         col.spacing(7).into()
@@ -354,6 +315,7 @@ impl std::fmt::Display for NoiseFunctionName {
     }
 }
 
+#[derive(Clone)]
 pub enum NoiseFunction {
     Fbm(Fbm<Perlin>),
     Billow(Billow<Perlin>),
@@ -407,23 +369,17 @@ pub fn choose_noise(controls: &NoiseControls) -> NoiseFunction {
         NoiseFunctionName::Fbm => NoiseFunction::Fbm(
             Fbm::<Perlin>::default()
                 .set_octaves(controls.octaves as usize)
-                .set_persistence(controls.persistence as f64)
-                .set_lacunarity(controls.lacunarity as f64)
                 .set_frequency(controls.frequency as f64),
         ),
         NoiseFunctionName::Billow => NoiseFunction::Billow(
             Billow::<Perlin>::default()
                 .set_octaves(controls.octaves as usize)
-                .set_lacunarity(controls.lacunarity as f64)
-                .set_frequency(controls.frequency as f64)
-                .set_persistence(controls.persistence as f64),
+                .set_frequency(controls.frequency as f64),
         ),
         NoiseFunctionName::Ridged => NoiseFunction::Ridged(
             RidgedMulti::<Perlin>::default()
                 .set_octaves(controls.octaves as usize)
-                .set_lacunarity(controls.lacunarity as f64)
-                .set_frequency(controls.frequency as f64)
-                .set_persistence(controls.persistence as f64),
+                .set_frequency(controls.frequency as f64),
         ),
         NoiseFunctionName::Value => NoiseFunction::Value(Value::default()),
         NoiseFunctionName::Cylinders => NoiseFunction::Cylinders(TranslatePoint::new(
@@ -432,9 +388,7 @@ pub fn choose_noise(controls: &NoiseControls) -> NoiseFunction {
         NoiseFunctionName::Curl => {
             let nf = Fbm::<Perlin>::default()
                 .set_octaves(controls.octaves as usize)
-                .set_lacunarity(controls.lacunarity as f64)
-                .set_frequency(controls.frequency as f64)
-                .set_persistence(controls.persistence as f64);
+                .set_frequency(controls.frequency as f64);
             NoiseFunction::Curl(Curl::new(nf))
         }
         NoiseFunctionName::Sinusoidal => NoiseFunction::Sinusoidal(Sinusoidal::new(
@@ -444,9 +398,7 @@ pub fn choose_noise(controls: &NoiseControls) -> NoiseFunction {
         NoiseFunctionName::SinFbm => NoiseFunction::SinFbm(Sin::new(
             Fbm::<Perlin>::default()
                 .set_octaves(controls.octaves as usize)
-                .set_lacunarity(controls.lacunarity as f64)
-                .set_frequency(controls.frequency as f64)
-                .set_persistence(controls.persistence as f64),
+                .set_frequency(controls.frequency as f64),
         )),
         NoiseFunctionName::Image => NoiseFunction::Image(
             ImgNoise::new(controls.img.clone()).set_map(controls.img_color_map.unwrap()),
@@ -454,6 +406,7 @@ pub fn choose_noise(controls: &NoiseControls) -> NoiseFunction {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Sinusoidal {
     x_freq: f64,
     y_freq: f64,
@@ -479,6 +432,8 @@ impl NoiseFn<f64, 2> for Sinusoidal {
         0.5 * ((self.x_freq * point[0]).sin() + (self.y_freq * point[1]).sin())
     }
 }
+
+#[derive(Debug, Clone, Copy)]
 pub struct Sin<T, Source, const DIM: usize>
 where
     Source: NoiseFn<T, DIM>,

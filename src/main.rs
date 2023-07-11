@@ -11,8 +11,8 @@ use rayon::prelude::*;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use wassily::prelude::{
-    imageops, img_noise, noise2d, noise2d_01, open, pt, Colorful, Coord, DynamicImage, Fbm,
-    GenericImageView, ImageBuffer, NoiseOpts, Perlin, Rgba, Seedable, Warp, WarpNode,
+    imageops, img_noise, noise2d, noise2d_01, open, pt, Colorful, Coord, DynamicImage, ImageBuffer,
+    NoiseOpts, Rgba, Seedable, Warp, WarpNode,
 };
 
 mod dominos;
@@ -64,6 +64,7 @@ pub enum Message {
     WidthSet(String),
     HeightSet(String),
     Sync(bool),
+    WarpTwice(bool),
     Null,
 }
 
@@ -78,6 +79,7 @@ struct Controls {
     export_width: String,
     export_height: String,
     sync: bool,
+    warp_twice: bool,
 }
 
 impl Default for Controls {
@@ -98,6 +100,7 @@ impl Default for Controls {
             export_height: String::from("inches / pixels"),
             exporting: false,
             sync: true,
+            warp_twice: false,
         }
     }
 }
@@ -124,7 +127,6 @@ impl Warper {
     }
 
     pub fn draw(&mut self) {
-        // let img = self.img.blur(20.0);
         let img_data = draw(&self.controls, &self.img);
         self.image = image::Handle::from_pixels(self.img.width(), self.img.height(), img_data);
     }
@@ -213,7 +215,6 @@ impl Application for Warper {
                 let handel = self.image.clone();
                 return Command::perform(
                     Warper::print(handel, self.controls.clone()),
-                    // print(self.controls.clone(), self.img.clone()),
                     ExportComplete,
                 );
             }
@@ -243,6 +244,10 @@ impl Application for Warper {
             HeightSet(h) => self.controls.export_height = h,
             Sync(b) => {
                 self.controls.sync = b;
+                self.draw()
+            }
+            WarpTwice(b) => {
+                self.controls.warp_twice = b;
                 self.draw()
             }
             Null => {}
@@ -287,6 +292,9 @@ impl Application for Warper {
             .push(Container::new(
                 toggler("Sync".to_owned(), self.controls.sync, Sync).text_size(15),
             ))
+            .push(Container::new(
+                toggler("Warp Twide".to_owned(), self.controls.warp_twice, WarpTwice).text_size(15),
+            ))
             .push(
                 row!(
                     text("Width").size(15).width(90),
@@ -313,8 +321,6 @@ impl Application for Warper {
             self.controls.theta_noise.scale_x,
             self.controls.theta_noise.scale_y,
             self.controls.theta_noise.octaves,
-            self.controls.theta_noise.persistence,
-            self.controls.theta_noise.lacunarity,
             self.controls.theta_noise.frequency,
             self.controls.theta_noise.sin_x_freq,
             self.controls.theta_noise.sin_y_freq,
@@ -338,8 +344,6 @@ impl Application for Warper {
                 self.controls.radius_noise.scale_x,
                 self.controls.radius_noise.scale_y,
                 self.controls.radius_noise.octaves,
-                self.controls.radius_noise.persistence,
-                self.controls.radius_noise.lacunarity,
                 self.controls.radius_noise.frequency,
                 self.controls.radius_noise.sin_x_freq,
                 self.controls.radius_noise.sin_y_freq,
@@ -410,6 +414,10 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
     } else {
         choose_noise(&controls.radius_noise).set_seed(98713)
     };
+
+    let warpx = nf_theta.clone();
+    let warpy = nf_r.clone();
+
     let warp = match controls.coordinates.unwrap() {
         Coordinates::Polar => Warp::new(
             Arc::new(move |z| {
@@ -442,21 +450,23 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
             Coord::Absolute,
         ),
     };
-    // let warp2 = Warp::new(
-    //     Arc::new(move |z| {
-    //         pt(
-    //             noise2d(
-    //                 Fbm::<Perlin>::default().set_seed(97813),
-    //                 &opts_theta,
-    //                 z.x,
-    //                 z.y,
-    //             ),
-    //             noise2d(Fbm::<Perlin>::default().set_seed(1879), &opts_r, z.x, z.y),
-    //         )
-    //     }),
-    //     WarpNode::More(Arc::new(warp)),
-    //     Coord::Cartesian,
-    // );
+
+    let warp2;
+    if controls.warp_twice {
+        warp2 = Warp::new(
+            Arc::new(move |z| {
+                pt(
+                    noise2d(&warpx, &opts_theta, z.x, z.y),
+                    noise2d(&warpy, &opts_r, z.x, z.y),
+                )
+            }),
+            WarpNode::More(Arc::new(warp)),
+            Coord::Cartesian,
+        );
+    } else {
+        warp2 = warp;
+    }
+
     let mut buffer: Vec<(u32, u32)> =
         Vec::with_capacity(img.width() as usize * img.height() as usize);
     for i in 0..img.height() {
@@ -465,7 +475,7 @@ fn draw(controls: &Controls, img: &DynamicImage) -> Vec<u8> {
         }
     }
     let par_iter = buffer.par_iter().flat_map_iter(|p| {
-        let t = warp
+        let t = warp2
             .get_wrapped(p.0 as f32, p.1 as f32)
             .rotate_hue(controls.hue_rotation)
             .as_u8s();

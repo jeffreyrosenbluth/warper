@@ -2886,6 +2886,7 @@ dependencies = [
 [[package]]
 name = "wassily"
 version = "0.1.0"
+source = "git+https://github.com/jeffreyrosenbluth/wassily#06eff9b2c0210c40e53e2613a71a82763ac25319"
 dependencies = [
  "color-thief",
  "image",

@@ -22,8 +22,8 @@ pub fn draw_dominos(width: u32, height: u32, size: u32) -> Canvas {
     }
     for d in dominos {
         let p = pt(d.x as f32 * size as f32, d.y as f32 * size as f32);
-        let color1 = rand_okhsl_hue(&mut rng, 50.0..80.0);
-        let color2 = rand_okhsl_hue(&mut rng, 230.0..260.0);
+        let color1 = rand_okhsl_hue(&mut rng, 30.0..60.0);
+        let color2 = rand_okhsl_hue(&mut rng, 200.0..230.0);
         let stops = vec![
             GradientStop::new(0.0, color1),
             GradientStop::new(1.0, color2),
